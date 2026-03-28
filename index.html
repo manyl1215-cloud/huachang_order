@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>線上點餐系統</title>
+    <style>
+        body { font-family: '微軟正黑體', sans-serif; padding: 20px; max-width: 800px; margin: auto; }
+        .category { margin-bottom: 20px; border: 1px solid #ccc; padding: 15px; border-radius: 8px; }
+        .category h3 { margin-top: 0; color: #333; border-bottom: 2px solid #eee; padding-bottom: 5px; }
+        .menu-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .item-info { flex-grow: 1; }
+        .item-price { width: 60px; text-align: right; color: #d32f2f; font-weight: bold; }
+        .item-qty { width: 80px; text-align: right; }
+        .item-qty input { width: 50px; text-align: center; }
+        .footer { position: sticky; bottom: 0; background: white; padding: 15px; border-top: 2px solid #ccc; text-align: right; }
+        button { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; }
+        button:hover { background-color: #45a049; }
+        .table-input { margin-bottom: 20px; font-size: 18px; }
+    </style>
+</head>
+<body>
+
+    <h1>📝 餐廳線上點餐</h1>
+    
+    <div class="table-input">
+        <label for="tableNum"><b>桌號 / 電話：</b></label>
+        <input type="text" id="tableNum" placeholder="例如：3桌 或 0912..." required>
+    </div>
+
+    <div id="menuContainer"></div>
+
+    <div class="footer">
+        <h2 style="display: inline-block; margin-right: 20px;">總計: $<span id="totalPrice">0</span></h2>
+        <button onclick="submitOrder()">送出訂單</button>
+    </div>
+
+    <script>
+        // 你的 Google Apps Script 網址 (請替換為你部署後的 URL)
+        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxFDuIux9HTILKccnc8YSSYLIXlB8VoON9CnZ-coKC87uD0O7BOnN7Whau_ADs80In3/exec';
+
+        // 菜單資料庫 (你可以依照圖片繼續往下新增)
+        const menuData = [
+            {
+                category: "熱炒類",
+                items: [
+                    { name: "合菜戴帽(附餅皮)", price: 220 },
+                    { name: "鳳梨蝦球", price: 240 },
+                    { name: "蔥爆牛肉", price: 210 },
+                    { name: "蝦仁炒蛋", price: 180 },
+                    { name: "炒空心菜", price: 80 }
+                ]
+            },
+            {
+                category: "飯類/粥類",
+                items: [
+                    { name: "白飯", price: 15 },
+                    { name: "肉絲蛋炒飯", price: 80 },
+                    { name: "排骨飯", price: 100 }
+                ]
+            },
+            {
+                category: "麵類",
+                items: [
+                    { name: "牛肉炒麵", price: 110 },
+                    { name: "木須炒麵", price: 90 },
+                    { name: "酸辣麵", price: 85 }
+                ]
+            },
+            {
+                category: "水餃/湯包/餅類",
+                items: [
+                    { name: "招牌水餃", price: 7 },
+                    { name: "蔥油餅", price: 60 },
+                    { name: "小籠湯包", price: 100 }
+                ]
+            }
+        ];
+
+        // 動態生成菜單 HTML
+        const container = document.getElementById('menuContainer');
+        menuData.forEach((cat, catIndex) => {
+            let section = `<div class="category"><h3>${cat.category}</h3>`;
+            cat.items.forEach((item, itemIndex) => {
+                let inputId = `item_${catIndex}_${itemIndex}`;
+                section += `
+                    <div class="menu-item">
+                        <div class="item-info">${item.name}</div>
+                        <div class="item-price">$${item.price}</div>
+                        <div class="item-qty">
+                            <input type="number" id="${inputId}" min="0" value="0" data-name="${item.name}" data-price="${item.price}" onchange="calculateTotal()">
+                        </div>
+                    </div>`;
+            });
+            section += `</div>`;
+            container.innerHTML += section;
+        });
+
+        // 計算總金額
+        function calculateTotal() {
+            let total = 0;
+            const inputs = document.querySelectorAll('input[type="number"]');
+            inputs.forEach(input => {
+                let qty = parseInt(input.value) || 0;
+                let price = parseInt(input.getAttribute('data-price')) || 0;
+                total += qty * price;
+            });
+            document.getElementById('totalPrice').innerText = total;
+        }
+
+        // 送出訂單至 Google Sheet
+        function submitOrder() {
+            const tableNum = document.getElementById('tableNum').value;
+            if (!tableNum) {
+                alert("請填寫桌號或電話！");
+                return;
+            }
+
+            let orderDetails = [];
+            let totalAmount = 0;
+            
+            const inputs = document.querySelectorAll('input[type="number"]');
+            inputs.forEach(input => {
+                let qty = parseInt(input.value);
+                if (qty > 0) {
+                    let name = input.getAttribute('data-name');
+                    let price = parseInt(input.getAttribute('data-price'));
+                    orderDetails.push(`${name} x${qty} ($${price * qty})`);
+                    totalAmount += (qty * price);
+                }
+            });
+
+            if (orderDetails.length === 0) {
+                alert("請至少選擇一項餐點！");
+                return;
+            }
+
+            // 準備傳送的資料
+            const payload = {
+                tableNumber: tableNum,
+                orderDetails: orderDetails.join("\n"),
+                totalAmount: totalAmount
+            };
+
+            // 改變按鈕狀態
+            const btn = document.querySelector('button');
+            btn.innerText = "訂單傳送中...";
+            btn.disabled = true;
+
+            // 透過 fetch 發送 POST 請求給 Apps Script
+            fetch(GOOGLE_SCRIPT_URL, {
+                method: 'POST',
+                // 使用 text/plain 避免跨網域 (CORS) 預檢請求問題，但內容傳 JSON
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if(data.status === "success") {
+                    alert("訂單送出成功！");
+                    window.location.reload(); // 重新載入頁面清空表單
+                } else {
+                    alert("發生錯誤：" + data.message);
+                    btn.innerText = "送出訂單";
+                    btn.disabled = false;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert("訂單送出失敗，請檢查網路連線。");
+                btn.innerText = "送出訂單";
+                btn.disabled = false;
+            });
+        }
+    </script>
+</body>
+</html>
