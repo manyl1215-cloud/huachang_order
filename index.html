@@ -5,41 +5,83 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>線上點餐系統</title>
     <style>
-        body { font-family: '微軟正黑體', sans-serif; padding: 20px; max-width: 800px; margin: auto; }
+        body { font-family: '微軟正黑體', sans-serif; padding: 20px; max-width: 800px; margin: auto; padding-bottom: 120px; }
         .category { margin-bottom: 20px; border: 1px solid #ccc; padding: 15px; border-radius: 8px; }
         .category h3 { margin-top: 0; color: #333; border-bottom: 2px solid #eee; padding-bottom: 5px; }
         .menu-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
         .item-info { flex-grow: 1; }
         .item-price { width: 60px; text-align: right; color: #d32f2f; font-weight: bold; }
         .item-qty { width: 80px; text-align: right; }
-        .item-qty input { width: 50px; text-align: center; }
-        .footer { position: sticky; bottom: 0; background: white; padding: 15px; border-top: 2px solid #ccc; text-align: right; }
-        button { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; }
+        .item-qty input { width: 50px; text-align: center; font-size: 16px; }
+        
+        /* 底部固定區域設計 */
+        .footer { position: fixed; bottom: 0; left: 0; right: 0; background: #fdfdfd; padding: 15px 20px; border-top: 2px solid #ccc; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); z-index: 100; }
+        .footer-content { max-width: 800px; margin: auto; display: flex; justify-content: space-between; align-items: flex-end; }
+        .live-details { flex-grow: 1; font-size: 14px; color: #555; max-height: 80px; overflow-y: auto; text-align: left; margin-right: 15px; }
+        .total-section { text-align: right; min-width: 150px; }
+        
+        button { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; width: 100%; margin-top: 5px; font-weight: bold; }
         button:hover { background-color: #45a049; }
-        .table-input { margin-bottom: 20px; font-size: 18px; }
+        button:disabled { background-color: #cccccc; cursor: not-allowed; }
+        
+        .header-input { margin-bottom: 15px; font-size: 16px; display: flex; align-items: center; }
+        .header-input label { width: 90px; font-weight: bold; }
+        .header-input select, .header-input input { flex-grow: 1; padding: 8px; font-size: 16px; border-radius: 4px; border: 1px solid #ccc; }
     </style>
 </head>
 <body>
 
-    <h1>📝 餐廳線上點餐</h1>
+    <h1>📝 午餐線上點餐</h1>
     
-    <div class="table-input">
-        <label for="tableNum"><b>桌號 / 電話：</b></label>
-        <input type="text" id="tableNum" placeholder="例如：3桌 或 0912..." required>
+    <div class="header-input">
+        <label for="employee">訂購人員：</label>
+        <select id="employee" required>
+            <option value="">請選擇你的名字...</option>
+        </select>
+    </div>
+
+    <div class="header-input">
+        <label for="tableNum">備註：</label>
+        <input type="text" id="tableNum" placeholder="例如：少飯、不要蔥 (選填)">
     </div>
 
     <div id="menuContainer"></div>
 
     <div class="footer">
-        <h2 style="display: inline-block; margin-right: 20px;">總計: $<span id="totalPrice">0</span></h2>
-        <button onclick="submitOrder()">送出訂單</button>
+        <div class="footer-content">
+            <div class="live-details" id="liveOrderDetails">
+                尚未選擇餐點
+            </div>
+            <div class="total-section">
+                <h3 style="margin: 0 0 10px 0;">總計: $<span id="totalPrice">0</span></h3>
+                <button id="submitBtn" onclick="submitOrder()">送出訂單</button>
+            </div>
+        </div>
     </div>
 
     <script>
-        // 你的 Google Apps Script 網址 (請替換為你部署後的 URL)
-        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxFDuIux9HTILKccnc8YSSYLIXlB8VoON9CnZ-coKC87uD0O7BOnN7Whau_ADs80In3/exec';
+        // 1. 你的 Google Apps Script 網址 (請務必替換！)
+        const GOOGLE_SCRIPT_URL = 'YOUR_GOOGLE_SCRIPT_URL_HERE';
 
-        // 菜單資料庫 (你可以依照圖片繼續往下新增)
+        // 2. 員工名單
+        const employees = [
+            "柳奇宏", "力乃青", "董懿嫺", "李岱娟", "林炫均", "黃筱淇", "林家意",
+            "蔡雙全", "吳建毅", "崔文沛", "涂有丞", "林澄洋", "崔顯亞",
+            "湯暉恆", "洪寶清", "吳國禎", "賴奕勳", "滿昱綸", "張嗣賢", 
+            "楊瑞銘", "方宗尉", "蔡尚霖", "劉建仁", "石玉嬋", "賴庭玉",
+            "黃瑞勳", "楊正財", "林于盛", "薛年慶"
+        ];
+
+        // 動態生成員工下拉選單
+        const empSelect = document.getElementById('employee');
+        employees.forEach(emp => {
+            let option = document.createElement('option');
+            option.value = emp;
+            option.textContent = emp;
+            empSelect.appendChild(option);
+        });
+
+        // 3. 菜單資料庫 (可繼續擴充)
         const menuData = [
             {
                 category: "熱炒類",
@@ -57,14 +99,6 @@
                     { name: "白飯", price: 15 },
                     { name: "肉絲蛋炒飯", price: 80 },
                     { name: "排骨飯", price: 100 }
-                ]
-            },
-            {
-                category: "麵類",
-                items: [
-                    { name: "牛肉炒麵", price: 110 },
-                    { name: "木須炒麵", price: 90 },
-                    { name: "酸辣麵", price: 85 }
                 ]
             },
             {
@@ -88,7 +122,7 @@
                         <div class="item-info">${item.name}</div>
                         <div class="item-price">$${item.price}</div>
                         <div class="item-qty">
-                            <input type="number" id="${inputId}" min="0" value="0" data-name="${item.name}" data-price="${item.price}" onchange="calculateTotal()">
+                            <input type="number" id="${inputId}" min="0" value="0" data-name="${item.name}" data-price="${item.price}" oninput="calculateTotal()">
                         </div>
                     </div>`;
             });
@@ -96,82 +130,17 @@
             container.innerHTML += section;
         });
 
-        // 計算總金額
+        // 計算總金額並更新即時訂單明細
         function calculateTotal() {
             let total = 0;
+            let detailsArray = [];
             const inputs = document.querySelectorAll('input[type="number"]');
+            
             inputs.forEach(input => {
                 let qty = parseInt(input.value) || 0;
-                let price = parseInt(input.getAttribute('data-price')) || 0;
-                total += qty * price;
-            });
-            document.getElementById('totalPrice').innerText = total;
-        }
-
-        // 送出訂單至 Google Sheet
-        function submitOrder() {
-            const tableNum = document.getElementById('tableNum').value;
-            if (!tableNum) {
-                alert("請填寫桌號或電話！");
-                return;
-            }
-
-            let orderDetails = [];
-            let totalAmount = 0;
-            
-            const inputs = document.querySelectorAll('input[type="number"]');
-            inputs.forEach(input => {
-                let qty = parseInt(input.value);
                 if (qty > 0) {
                     let name = input.getAttribute('data-name');
-                    let price = parseInt(input.getAttribute('data-price'));
-                    orderDetails.push(`${name} x${qty} ($${price * qty})`);
-                    totalAmount += (qty * price);
+                    let price = parseInt(input.getAttribute('data-price')) || 0;
+                    total += qty * price;
+                    detailsArray.push(`${name} x${qty}`);
                 }
-            });
-
-            if (orderDetails.length === 0) {
-                alert("請至少選擇一項餐點！");
-                return;
-            }
-
-            // 準備傳送的資料
-            const payload = {
-                tableNumber: tableNum,
-                orderDetails: orderDetails.join("\n"),
-                totalAmount: totalAmount
-            };
-
-            // 改變按鈕狀態
-            const btn = document.querySelector('button');
-            btn.innerText = "訂單傳送中...";
-            btn.disabled = true;
-
-            // 透過 fetch 發送 POST 請求給 Apps Script
-            fetch(GOOGLE_SCRIPT_URL, {
-                method: 'POST',
-                // 使用 text/plain 避免跨網域 (CORS) 預檢請求問題，但內容傳 JSON
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify(payload)
-            })
-            .then(response => response.json())
-            .then(data => {
-                if(data.status === "success") {
-                    alert("訂單送出成功！");
-                    window.location.reload(); // 重新載入頁面清空表單
-                } else {
-                    alert("發生錯誤：" + data.message);
-                    btn.innerText = "送出訂單";
-                    btn.disabled = false;
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert("訂單送出失敗，請檢查網路連線。");
-                btn.innerText = "送出訂單";
-                btn.disabled = false;
-            });
-        }
-    </script>
-</body>
-</html>
