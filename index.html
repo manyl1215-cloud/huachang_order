@@ -14,7 +14,6 @@
         .item-qty { width: 80px; text-align: right; }
         .item-qty input { width: 50px; text-align: center; font-size: 16px; }
         
-        /* 底部固定區域設計 */
         .footer { position: fixed; bottom: 0; left: 0; right: 0; background: #fdfdfd; padding: 15px 20px; border-top: 2px solid #ccc; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); z-index: 100; }
         .footer-content { max-width: 800px; margin: auto; display: flex; justify-content: space-between; align-items: flex-end; }
         .live-details { flex-grow: 1; font-size: 14px; color: #555; max-height: 80px; overflow-y: auto; text-align: left; margin-right: 15px; }
@@ -49,9 +48,7 @@
 
     <div class="footer">
         <div class="footer-content">
-            <div class="live-details" id="liveOrderDetails">
-                尚未選擇餐點
-            </div>
+            <div class="live-details" id="liveOrderDetails">尚未選擇餐點</div>
             <div class="total-section">
                 <h3 style="margin: 0 0 10px 0;">總計: $<span id="totalPrice">0</span></h3>
                 <button id="submitBtn" onclick="submitOrder()">送出訂單</button>
@@ -60,10 +57,9 @@
     </div>
 
     <script>
-        // 1. 你的 Google Apps Script 網址 (請務必替換！)
+        // 【注意這裡】替換網址時，請務必保留前後的單引號 ' '
         const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxFDuIux9HTILKccnc8YSSYLIXlB8VoON9CnZ-coKC87uD0O7BOnN7Whau_ADs80In3/exec';
 
-        // 2. 員工名單
         const employees = [
             "柳奇宏", "力乃青", "董懿嫺", "李岱娟", "林炫均", "黃筱淇", "林家意",
             "蔡雙全", "吳建毅", "崔文沛", "涂有丞", "林澄洋", "崔顯亞",
@@ -72,7 +68,6 @@
             "黃瑞勳", "楊正財", "林于盛", "薛年慶"
         ];
 
-        // 動態生成員工下拉選單
         const empSelect = document.getElementById('employee');
         employees.forEach(emp => {
             let option = document.createElement('option');
@@ -81,7 +76,6 @@
             empSelect.appendChild(option);
         });
 
-        // 3. 菜單資料庫 (可繼續擴充)
         const menuData = [
             {
                 category: "熱炒類",
@@ -111,7 +105,6 @@
             }
         ];
 
-        // 動態生成菜單 HTML
         const container = document.getElementById('menuContainer');
         menuData.forEach((cat, catIndex) => {
             let section = `<div class="category"><h3>${cat.category}</h3>`;
@@ -130,7 +123,6 @@
             container.innerHTML += section;
         });
 
-        // 計算總金額並更新即時訂單明細
         function calculateTotal() {
             let total = 0;
             let detailsArray = [];
@@ -144,3 +136,86 @@
                     total += qty * price;
                     detailsArray.push(`${name} x${qty}`);
                 }
+            });
+
+            document.getElementById('totalPrice').innerText = total;
+            
+            const liveDetailsBox = document.getElementById('liveOrderDetails');
+            if (detailsArray.length > 0) {
+                liveDetailsBox.innerHTML = detailsArray.join("<br>");
+            } else {
+                liveDetailsBox.innerHTML = "尚未選擇餐點";
+            }
+        }
+
+        function submitOrder() {
+            const employeeName = document.getElementById('employee').value;
+            const note = document.getElementById('tableNum').value;
+
+            if (!employeeName) {
+                alert("請從下拉選單選擇訂購人員！");
+                document.getElementById('employee').focus();
+                return;
+            }
+
+            let orderItems = [];
+            let totalAmount = 0;
+            
+            const inputs = document.querySelectorAll('input[type="number"]');
+            inputs.forEach(input => {
+                let qty = parseInt(input.value);
+                if (qty > 0) {
+                    let name = input.getAttribute('data-name');
+                    let price = parseInt(input.getAttribute('data-price'));
+                    orderItems.push(`${name} x${qty} ($${price * qty})`);
+                    totalAmount += (qty * price);
+                }
+            });
+
+            if (orderItems.length === 0) {
+                alert("請至少選擇一項餐點！");
+                return;
+            }
+
+            let finalOrderDetails = `訂購人：${employeeName}\n`;
+            if (note) {
+                finalOrderDetails += `備註：${note}\n`;
+            }
+            finalOrderDetails += `---明細---\n${orderItems.join("\n")}`;
+
+            const payload = {
+                tableNumber: employeeName,
+                orderDetails: finalOrderDetails,
+                totalAmount: totalAmount
+            };
+
+            const btn = document.getElementById('submitBtn');
+            btn.innerText = "訂單傳送中...";
+            btn.disabled = true;
+
+            fetch(GOOGLE_SCRIPT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if(data.status === "success") {
+                    alert(`${employeeName} 的訂單已成功送出！`);
+                    window.location.reload();
+                } else {
+                    alert("發生錯誤：" + data.message);
+                    btn.innerText = "送出訂單";
+                    btn.disabled = false;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert("訂單送出失敗，請檢查網路連線。");
+                btn.innerText = "送出訂單";
+                btn.disabled = false;
+            });
+        }
+    </script>
+</body>
+</html>
