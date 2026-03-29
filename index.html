@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>員工午餐/晚餐 點餐系統</title>
+    <title>華饌點餐系統</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- React & ReactDOM -->
@@ -12,7 +12,7 @@
     <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
-        body { font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif; background-color: #f3f4f6; }
+        body { font-family: 'PingFang TC', 'Microsoft JhengHei', sans-serif; background-color: #fdfbf7; }
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
@@ -24,14 +24,17 @@
         const { useState, useEffect, useMemo } = React;
 
         // ⚠️ 請將下方的網址替換成您部署出來的 Google Apps Script 網址
-        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbymTk53VhOw29AdOO3YtxQDD1E_1H-WVXzDPe4NPBGGn4EMktdR5kxzAMm6RJ0W4GJ8/exec";
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyxIte90Xa_FwqqTjvfdtOugPDNCnzfV3B5UHRbOPaypAN7IwUFB2H0Ba1iO9tgIaKD/exec";
+        
+        // 🌟 【新增】系統名稱：不同的系統請填寫不同的名稱，Google Sheet 會自動建立同名分頁來區分資料！
+        const SYSTEM_NAME = "華饌點餐系統";
 
         // --- 提取的資料 ---
         const employees = [
-            '柳奇宏', '力乃青', '董懿嫺', '李岱娟', '林鈺倖', '林炫均', '黃筱淇', '林家意', 
-            '蔡雙全', '吳建毅', '崔文沛', '涂有丞', '林澄洋', '崔顯亞', '湯暉恆', '顏志良', 
-            '洪寶清', '孟家榮', '吳國禎', '俞家雄', '黃琮群', '吳欣玫', '滿昱綸', '張嗣賢', 
-            '楊瑞銘', '黃瑞琳', '方宗尉', '蔡尚霖', '羅金祺', '王子銘', '劉建仁', '石玉嬋', 
+            '柳奇宏', '力乃青', '董懿嫺', '李岱娟', '林炫均', '黃筱淇', '林家意', 
+            '蔡雙全', '吳建毅', '崔文沛', '涂有丞', '林澄洋', '崔顯亞', '湯暉恆', 
+            '洪寶清', '賴奕勳', '吳國禎', '俞家雄', '黃琮群', '吳欣玫', '滿昱綸', '張嗣賢', 
+            '楊瑞銘', '方宗尉', '蔡尚霖', '劉建仁', '石玉嬋', 
             '賴庭玉', '黃瑞勳', '楊正財', '林于盛', '薛年慶'
         ];
 
@@ -84,10 +87,13 @@
             const [activeCategory, setActiveCategory] = useState("熱炒類");
             const [isSubmitting, setIsSubmitting] = useState(false);
             const [syncStatus, setSyncStatus] = useState("載入中...");
+            
+            // 新增：紀錄目前正在編輯的訂單 ID
+            const [editingOrderId, setEditingOrderId] = useState(null);
 
-            // 初始化：載入本地訂單並從 Google Sheet 獲取最新資料
+            // 初始化：從 Google Sheet 獲取最新資料 (如果沒有網址則載入本地)
             useEffect(() => {
-                const savedOrders = localStorage.getItem('localOrders');
+                const savedOrders = localStorage.getItem(`localOrders_${SYSTEM_NAME}`);
                 if (savedOrders) setOrders(JSON.parse(savedOrders));
                 
                 if (SCRIPT_URL && SCRIPT_URL.includes("script.google.com")) {
@@ -97,21 +103,22 @@
                 }
             }, []);
 
-            // 從 Google Sheet 獲取訂單
+            // 從 Google Sheet 獲取訂單 (傳入 systemName)
             const fetchOrders = async (url) => {
                 if (!url) return;
-                setSyncStatus("同步中...");
+                setSyncStatus("連線同步中...");
                 try {
-                    const response = await fetch(url + "?action=getOrders");
+                    const targetUrl = `${url}?action=getOrders&systemName=${encodeURIComponent(SYSTEM_NAME)}`;
+                    const response = await fetch(targetUrl);
                     const result = await response.json();
                     if (result.status === "success") {
                         setOrders(result.data);
-                        localStorage.setItem('localOrders', JSON.stringify(result.data));
-                        setSyncStatus("已與 Google Sheet 同步");
+                        localStorage.setItem(`localOrders_${SYSTEM_NAME}`, JSON.stringify(result.data));
+                        setSyncStatus("已與雲端同步");
                     }
                 } catch (error) {
                     console.error("Fetch error:", error);
-                    setSyncStatus("同步失敗，請檢查網址");
+                    setSyncStatus("連線失敗，請檢查網址");
                 }
             };
 
@@ -132,6 +139,11 @@
                 return Object.values(cart).reduce((sum, item) => sum + (item.price * item.quantity), 0);
             }, [cart]);
 
+            // 新增：計算今日訂單總金額
+            const totalOrdersAmount = useMemo(() => {
+                return orders.reduce((sum, order) => sum + Number(order.total), 0);
+            }, [orders]);
+
             const submitOrder = async () => {
                 if (!selectedUser) {
                     alert("請先選擇訂餐人員！");
@@ -144,17 +156,21 @@
 
                 setIsSubmitting(true);
                 const orderData = {
-                    id: Date.now().toString(),
+                    id: editingOrderId ? editingOrderId : Date.now().toString(), // 修改：如果是編輯模式則沿用舊 ID
                     user: selectedUser,
                     items: cart,
                     total: cartTotal,
-                    timestamp: new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })
+                    timestamp: new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' }),
+                    systemName: SYSTEM_NAME,
+                    action: editingOrderId ? 'update' : 'create' // 新增：告訴後端這是更新還是新增
                 };
 
-                // 更新本地 UI 狀態
-                const newOrders = [orderData, ...orders];
+                // 更新本地 UI 狀態：若是修改則取代舊資料，新增則安插在最前面
+                const newOrders = editingOrderId 
+                    ? orders.map(o => o.id === editingOrderId ? orderData : o) 
+                    : [orderData, ...orders];
                 setOrders(newOrders);
-                localStorage.setItem('localOrders', JSON.stringify(newOrders));
+                localStorage.setItem(`localOrders_${SYSTEM_NAME}`, JSON.stringify(newOrders));
                 
                 // 發送至 Google Sheet
                 if (SCRIPT_URL && SCRIPT_URL.includes("script.google.com")) {
@@ -169,8 +185,10 @@
                 }
 
                 setCart({});
+                setEditingOrderId(null); // 清除編輯狀態
+                if (!editingOrderId) setSelectedUser(""); // 如果是新增訂單才清空選擇的使用者
                 setIsSubmitting(false);
-                alert("點餐成功！");
+                alert(editingOrderId ? "修改成功！" : "點餐成功！");
             };
 
             const deleteOrder = async (orderId) => {
@@ -179,19 +197,34 @@
                 // 1. 更新本地狀態
                 const newOrders = orders.filter(o => o.id !== orderId);
                 setOrders(newOrders);
-                localStorage.setItem('localOrders', JSON.stringify(newOrders));
+                localStorage.setItem(`localOrders_${SYSTEM_NAME}`, JSON.stringify(newOrders));
 
-                // 2. 發送刪除請求至 Google Sheet
+                // 2. 發送刪除請求至 Google Sheet (包含 systemName 以確保刪對分頁)
                 if (SCRIPT_URL && SCRIPT_URL.includes("script.google.com")) {
                     try {
                         await fetch(SCRIPT_URL, {
                             method: 'POST',
-                            body: JSON.stringify({ action: 'delete', id: orderId }),
+                            body: JSON.stringify({ action: 'delete', id: orderId, systemName: SYSTEM_NAME }),
                         });
                     } catch (error) {
                         console.error("刪除 Google Sheet 資料失敗", error);
                     }
                 }
+            };
+
+            // 新增：進入編輯模式
+            const handleEditOrder = (order) => {
+                setSelectedUser(order.user);
+                setCart(order.items);
+                setEditingOrderId(order.id);
+                window.scrollTo({ top: 0, behavior: 'smooth' }); // 畫面滾動到頂部方便操作
+            };
+
+            // 新增：取消編輯模式
+            const cancelEdit = () => {
+                setEditingOrderId(null);
+                setCart({});
+                setSelectedUser("");
             };
 
             const copyToExcel = () => {
@@ -225,156 +258,180 @@
             };
 
             return (
-                <div className="max-w-4xl mx-auto p-4 flex flex-col md:flex-row gap-6">
-                    {/* 左側：點餐區 */}
-                    <div className="flex-1 space-y-6">
-                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                            <div className="flex justify-between items-center mb-6">
-                                <h1 className="text-2xl font-bold text-gray-800">🍽️ 員工點餐系統</h1>
-                                <span className="text-xs font-medium px-2 py-1 bg-gray-100 text-gray-600 rounded-full">
-                                    狀態: {syncStatus}
-                                </span>
-                            </div>
+                <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-pink-50 py-6 font-sans">
+                    <div className="max-w-4xl mx-auto p-4 flex flex-col md:flex-row gap-6">
+                        {/* 左側：點餐區 */}
+                        <div className="flex-1 space-y-6">
+                            <div className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-sm border border-green-100">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h1 className="text-2xl font-bold text-green-800">🌸 {SYSTEM_NAME} 🌿</h1>
+                                    <span className="text-xs font-medium px-2 py-1 bg-green-100 text-green-700 rounded-full">
+                                        狀態: {syncStatus}
+                                    </span>
+                                </div>
 
-                            {/* 選擇員工 */}
-                            <div className="mb-6">
-                                <label className="block text-gray-700 text-sm font-bold mb-2">👤 請選擇點餐人員</label>
-                                <select 
-                                    className="w-full border-gray-300 border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                                    value={selectedUser}
-                                    onChange={(e) => setSelectedUser(e.target.value)}
-                                >
-                                    <option value="">-- 點擊選擇姓名 --</option>
-                                    {employees.map(emp => (
-                                        <option key={emp} value={emp}>{emp}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            {/* 菜單分類 */}
-                            <div className="flex overflow-x-auto hide-scrollbar gap-2 mb-4 pb-2">
-                                {Object.keys(menuData).map(category => (
-                                    <button
-                                        key={category}
-                                        onClick={() => setActiveCategory(category)}
-                                        className={`whitespace-nowrap px-4 py-2 rounded-full font-medium transition-colors ${
-                                            activeCategory === category 
-                                            ? "bg-blue-600 text-white shadow-md" 
-                                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                                        }`}
+                                {/* 選擇員工 */}
+                                <div className="mb-6">
+                                    <label className="block text-green-700 text-sm font-bold mb-2">👤 請選擇點餐人員</label>
+                                    <select 
+                                        className="w-full border-green-200 border p-3 rounded-lg focus:ring-2 focus:ring-pink-400 focus:border-pink-400 bg-white/90"
+                                        value={selectedUser}
+                                        onChange={(e) => setSelectedUser(e.target.value)}
                                     >
-                                        {category}
-                                    </button>
-                                ))}
-                            </div>
+                                        <option value="">-- 點擊選擇姓名 --</option>
+                                        {employees.map(emp => (
+                                            <option key={emp} value={emp}>{emp}</option>
+                                        ))}
+                                    </select>
+                                </div>
 
-                            {/* 菜單列表 */}
-                            <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
-                                {menuData[activeCategory].map(item => {
-                                    const qty = cart[item.name]?.quantity || 0;
-                                    return (
-                                        <div key={item.name} className="flex justify-between items-center p-3 hover:bg-gray-50 rounded-lg border border-transparent hover:border-gray-100 transition-colors">
-                                            <div>
-                                                <div className="font-medium text-gray-800">{item.name}</div>
-                                                <div className="text-gray-500 text-sm">${item.price}</div>
-                                            </div>
-                                            <div className="flex items-center gap-3">
-                                                {qty > 0 && (
-                                                    <button onClick={() => handleUpdateItem(item, -1)} className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center hover:bg-gray-200 font-bold">-</button>
-                                                )}
-                                                {qty > 0 && <span className="font-semibold w-4 text-center">{qty}</span>}
-                                                <button onClick={() => handleUpdateItem(item, 1)} className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center hover:bg-blue-200 font-bold">+</button>
-                                            </div>
-                                        </div>
-                                    )
-                                })}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* 右側：購物車與訂單板 */}
-                    <div className="w-full md:w-80 flex flex-col gap-6">
-                        
-                        {/* 購物車區塊 */}
-                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 sticky top-4">
-                            <h2 className="text-lg font-bold text-gray-800 mb-4 border-b pb-2">🛒 您目前的點餐</h2>
-                            
-                            {Object.keys(cart).length === 0 ? (
-                                <p className="text-gray-400 text-center py-6 text-sm">尚未選擇餐點</p>
-                            ) : (
-                                <div className="space-y-3 mb-4">
-                                    {Object.entries(cart).map(([name, data]) => (
-                                        <div key={name} className="flex justify-between text-sm">
-                                            <span className="text-gray-700">{name} <span className="text-gray-400">x{data.quantity}</span></span>
-                                            <span className="font-medium">${data.price * data.quantity}</span>
-                                        </div>
+                                {/* 菜單分類 */}
+                                <div className="flex overflow-x-auto hide-scrollbar gap-2 mb-4 pb-2">
+                                    {Object.keys(menuData).map(category => (
+                                        <button
+                                            key={category}
+                                            onClick={() => setActiveCategory(category)}
+                                            className={`whitespace-nowrap px-4 py-2 rounded-full font-medium transition-colors ${
+                                                activeCategory === category 
+                                                ? "bg-pink-400 text-white shadow-md" 
+                                                : "bg-white text-gray-500 hover:bg-pink-50 border border-pink-100"
+                                            }`}
+                                        >
+                                            {category}
+                                        </button>
                                     ))}
                                 </div>
-                            )}
-                            
-                            <div className="border-t pt-4 mt-auto">
-                                <div className="flex justify-between items-center mb-4">
-                                    <span className="font-bold text-gray-800">總計</span>
-                                    <span className="text-xl font-bold text-red-600">${cartTotal}</span>
-                                </div>
-                                <button 
-                                    onClick={submitOrder}
-                                    disabled={isSubmitting || Object.keys(cart).length === 0}
-                                    className={`w-full py-3 rounded-lg font-bold text-white transition-colors ${
-                                        isSubmitting || Object.keys(cart).length === 0 
-                                        ? "bg-gray-300 cursor-not-allowed" 
-                                        : "bg-blue-600 hover:bg-blue-700 shadow-md"
-                                    }`}
-                                >
-                                    {isSubmitting ? "送出中..." : "確認送出"}
-                                </button>
-                            </div>
-                        </div>
 
-                        {/* 即時訂單板 */}
-                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex-1">
-                            <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-                                📋 今日訂單總覽
-                                <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">{orders.length} 筆</span>
-                                <button 
-                                    onClick={copyToExcel} 
-                                    className="ml-auto text-sm bg-green-500 text-white px-3 py-1.5 rounded-lg hover:bg-green-600 transition-colors shadow-sm font-normal"
-                                >
-                                    📑 複製到 Excel
-                                </button>
-                            </h2>
-                            <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-                                {orders.length === 0 ? (
-                                    <p className="text-gray-400 text-center py-6 text-sm">目前尚無人點餐</p>
-                                ) : (
-                                    orders.map(order => (
-                                        <div key={order.id} className="bg-gray-50 p-3 rounded-lg border border-gray-100 relative group">
-                                            <div className="flex justify-between items-center mb-2">
-                                                <span className="font-bold text-blue-800">{order.user}</span>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-xs text-gray-400">{order.timestamp}</span>
-                                                    <button 
-                                                        onClick={() => deleteOrder(order.id)} 
-                                                        className="text-red-500 hover:text-red-700 text-xs px-2 py-1 rounded bg-red-100 opacity-0 group-hover:opacity-100 transition-opacity"
-                                                        title="刪除此筆訂單"
-                                                    >
-                                                        刪除
-                                                    </button>
+                                {/* 菜單列表 */}
+                                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                                    {menuData[activeCategory].map(item => {
+                                        const qty = cart[item.name]?.quantity || 0;
+                                        return (
+                                            <div key={item.name} className="flex justify-between items-center p-3 hover:bg-green-50/50 rounded-lg border border-transparent hover:border-green-100 transition-colors">
+                                                <div>
+                                                    <div className="font-medium text-gray-700">{item.name}</div>
+                                                    <div className="text-pink-500 text-sm">${item.price}</div>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    {qty > 0 && (
+                                                        <button onClick={() => handleUpdateItem(item, -1)} className="w-8 h-8 rounded-full bg-gray-100 text-gray-500 flex items-center justify-center hover:bg-gray-200 font-bold">-</button>
+                                                    )}
+                                                    {qty > 0 && <span className="font-semibold w-4 text-center text-green-700">{qty}</span>}
+                                                    <button onClick={() => handleUpdateItem(item, 1)} className="w-8 h-8 rounded-full bg-green-100 text-green-600 flex items-center justify-center hover:bg-green-200 font-bold">+</button>
                                                 </div>
                                             </div>
-                                            <div className="text-sm space-y-1 mb-2">
-                                                {Object.entries(order.items).map(([itemName, itemData]) => (
-                                                    <div key={itemName} className="flex justify-between text-gray-600">
-                                                        <span>{itemName} x{itemData.quantity}</span>
-                                                    </div>
-                                                ))}
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 右側：購物車與訂單板 */}
+                        <div className="w-full md:w-80 flex flex-col gap-6">
+                            
+                            {/* 購物車區塊 */}
+                            <div className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-sm border border-green-100 sticky top-4">
+                                <h2 className={`text-lg font-bold mb-4 border-b border-green-100 pb-2 flex items-center justify-between ${editingOrderId ? 'text-pink-500' : 'text-green-800'}`}>
+                                    <span>{editingOrderId ? "✏️ 修改訂單中" : "🧺 您的春日野餐籃"}</span>
+                                    {editingOrderId && <span className="text-xs bg-pink-100 text-pink-700 px-2 py-1 rounded-full">編輯模式</span>}
+                                </h2>
+                                
+                                {Object.keys(cart).length === 0 ? (
+                                    <p className="text-green-400 text-center py-6 text-sm">尚未選擇餐點</p>
+                                ) : (
+                                    <div className="space-y-3 mb-4">
+                                        {Object.entries(cart).map(([name, data]) => (
+                                            <div key={name} className="flex justify-between text-sm">
+                                                <span className="text-gray-700">{name} <span className="text-green-500 text-xs ml-1">x{data.quantity}</span></span>
+                                                <span className="font-medium text-pink-600">${data.price * data.quantity}</span>
                                             </div>
-                                            <div className="text-right font-semibold text-sm text-gray-800">
-                                                總額: ${order.total}
-                                            </div>
-                                        </div>
-                                    ))
+                                        ))}
+                                    </div>
                                 )}
+                                
+                                <div className="border-t border-green-100 pt-4 mt-auto">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <span className="font-bold text-green-800">總計</span>
+                                        <span className="text-xl font-bold text-pink-500">${cartTotal}</span>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        {editingOrderId && (
+                                            <button 
+                                                onClick={cancelEdit}
+                                                disabled={isSubmitting}
+                                                className="w-1/3 py-3 rounded-lg font-bold text-green-700 bg-green-100 hover:bg-green-200 transition-colors"
+                                            >
+                                                取消
+                                            </button>
+                                        )}
+                                        <button 
+                                            onClick={submitOrder}
+                                            disabled={isSubmitting || Object.keys(cart).length === 0}
+                                            className={`${editingOrderId ? 'w-2/3' : 'w-full'} py-3 rounded-lg font-bold text-white transition-colors ${
+                                                isSubmitting || Object.keys(cart).length === 0 
+                                                ? "bg-green-200 cursor-not-allowed" 
+                                                : "bg-green-500 hover:bg-green-600 shadow-md shadow-green-200"
+                                            }`}
+                                        >
+                                            {isSubmitting ? "處理中..." : (editingOrderId ? "儲存修改" : "確認送出")}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 即時訂單板 */}
+                            <div className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl shadow-sm border border-green-100 flex-1">
+                                <h2 className="text-lg font-bold text-green-800 mb-4 flex items-center gap-2 flex-wrap">
+                                    🌷 今日訂單總覽
+                                    <span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full">{orders.length} 筆</span>
+                                    <span className="bg-pink-100 text-pink-700 text-xs px-2 py-1 rounded-full flex-shrink-0">總計 ${totalOrdersAmount}</span>
+                                    <button 
+                                        onClick={copyToExcel} 
+                                        className="ml-auto text-sm bg-green-500 text-white px-3 py-1.5 rounded-lg hover:bg-green-600 transition-colors shadow-sm font-normal"
+                                    >
+                                        📑 複製到 Excel
+                                    </button>
+                                </h2>
+                                <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+                                    {orders.length === 0 ? (
+                                        <p className="text-green-400 text-center py-6 text-sm">目前尚無人點餐</p>
+                                    ) : (
+                                        orders.map(order => (
+                                            <div key={order.id} className={`p-3 rounded-lg border relative group transition-colors ${editingOrderId === order.id ? 'bg-pink-50 border-pink-300 shadow-sm' : 'bg-white border-green-100 hover:border-green-300'}`}>
+                                                <div className="flex justify-between items-center mb-2">
+                                                    <span className="font-bold text-green-700">{order.user}</span>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-xs text-gray-400">{order.timestamp}</span>
+                                                        <button 
+                                                            onClick={() => handleEditOrder(order)} 
+                                                            className="text-pink-600 hover:text-pink-800 text-xs px-2 py-1 rounded bg-pink-100 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                            title="修改此筆訂單"
+                                                        >
+                                                            修改
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => deleteOrder(order.id)} 
+                                                            className="text-red-400 hover:text-red-600 text-xs px-2 py-1 rounded bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                            title="刪除此筆訂單"
+                                                        >
+                                                            刪除
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div className="text-sm space-y-1 mb-2">
+                                                    {Object.entries(order.items).map(([itemName, itemData]) => (
+                                                        <div key={itemName} className="flex justify-between text-gray-600">
+                                                            <span>{itemName} <span className="text-green-500 text-xs ml-1">x{itemData.quantity}</span></span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <div className="text-right font-semibold text-sm text-pink-600">
+                                                    總額: ${order.total}
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
